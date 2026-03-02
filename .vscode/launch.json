@@ -1,0 +1,22 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "启动 Chrome 调试 (F5)",
+            "url": "http://localhost:5173",
+            "webRoot": "${workspaceFolder}/qt-demo",
+            "preLaunchTask": "vite-dev",
+            "internalConsoleOptions": "neverOpen"
+        },
+        {
+            "type": "edge",
+            "request": "launch",
+            "name": "Launch Edge and Debug qt-demo",
+            "url": "http://localhost:5173",
+            "webRoot": "${workspaceFolder}/qt-demo",
+            "preLaunchTask": "vite-dev"
+        }
+    ]
+}
