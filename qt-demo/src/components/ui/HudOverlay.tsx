@@ -1,8 +1,9 @@
 import React from 'react';
 import { useGameStore } from '../../store/gameStore';
+import { RichText } from './RichText';
 
 export const HudOverlay: React.FC = () => {
-    const { player, scenario, ui, toggleAppreciateMode } = useGameStore();
+    const { player, background, goal, ui, toggleAppreciateMode } = useGameStore();
     const { isAppreciating } = ui;
 
     // 赏析状态下淡出所有HUD
@@ -21,7 +22,7 @@ export const HudOverlay: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-3 pl-5">
                         <span className="text-amber-500/80 text-xs md:text-sm tracking-[0.5em] font-mono font-bold">
-                            {scenario.deadline}
+                            {background.deadline}
                         </span>
                         <div className="h-[1px] w-24 bg-gradient-to-r from-amber-500/50 to-transparent" />
                     </div>
@@ -94,10 +95,10 @@ export const HudOverlay: React.FC = () => {
                             .join('\n\n');
 
                         const payload = {
-                            backgroundId: state.scenario.id,
+                            backgroundId: state.background.id,
                             prologue,
-                            goal: state.scenario.goal,
-                            deadline: state.scenario.deadline,
+                            goal: state.goal,
+                            deadline: state.background.deadline,
                             playerOverrides: {
                                 hp: state.player.hp,
                                 points: state.player.points,
@@ -110,13 +111,13 @@ export const HudOverlay: React.FC = () => {
                                     inventory: state.player.inventory,
                                     perks: state.player.perks,
                                 },
-                                worldMap: state.scenario.worldMap ? {
-                                    scenes: Object.entries(state.scenario.worldMap.scenes).map(([name, desc]) => ({ name, description: desc, matchedImage: null })),
-                                    connections: state.scenario.worldMap.connections,
-                                    characters: Object.entries(state.scenario.worldMap.charactersInScene || {}).flatMap(([loc, chars]) =>
+                                worldMap: state.background.worldMap ? {
+                                    scenes: Object.entries(state.background.worldMap.scenes).map(([name, desc]) => ({ name, description: desc, matchedImage: null })),
+                                    connections: state.background.worldMap.connections,
+                                    characters: Object.entries(state.background.worldMap.charactersInScene || {}).flatMap(([loc, chars]) =>
                                         chars.map(c => ({ ...c, location: loc, matchedImage: c.icon }))
                                     ),
-                                    interactables: Object.entries(state.scenario.worldMap.interactablesInScene || {}).flatMap(([loc, items]) =>
+                                    interactables: Object.entries(state.background.worldMap.interactablesInScene || {}).flatMap(([loc, items]) =>
                                         items.map(i => ({ ...i, location: loc }))
                                     ),
                                 } : {},
@@ -150,14 +151,15 @@ export const HudOverlay: React.FC = () => {
             </div>
 
             {/* 底部目标提示 */}
-            <div className={`absolute bottom-32 left-10 w-72 md:w-80 bg-black/60 backdrop-blur-2xl p-6 border-l-[3px] border-amber-500 shadow-2xl transition-all duration-700 ${hudOpacityClass} `}>
+            <div className={`absolute bottom-32 left-10 w-72 md:w-80 bg-black/60 backdrop-blur-2xl p-6 border-l-[3px] border-amber-500 shadow-2xl transition-all duration-700 z-50 ${hudOpacityClass} `}>
                 <div className="flex items-center gap-3 mb-3">
                     <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
                     <span className="text-amber-400 text-[10px] tracking-[0.3em] font-black uppercase">Current Objective</span>
                 </div>
-                <p className="text-white text-sm md:text-base leading-relaxed font-light tracking-wide">
-                    {scenario.goal}
-                </p>
+                <RichText
+                    text={goal}
+                    className="text-white text-sm md:text-base leading-relaxed font-light tracking-wide"
+                />
             </div>
 
         </>

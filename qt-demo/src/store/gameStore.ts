@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { GAME_CONFIG } from '../gameConfig';
-import { backgroundRegistry } from '../scenarios';
+import { backgroundRegistry } from '../backgrounds';
 
 
 // 游戏阶段枚举
@@ -42,10 +42,9 @@ export interface GameState {
         inventory: Array<{ name: string; icon: string }>;
         perks: string[]; // 玩家技能/天赋
     };
-    scenario: {
+    background: {
         id: string; // 背景ID，用于加载本地资源映射
         name: string;
-        goal: string;
         deadline: string;
         // 存储本图内已知场景与人物关系的简要数据
         worldMap?: {
@@ -64,14 +63,17 @@ export interface GameState {
         speaker: string;
         text: string;
     }>;
+    goal: string; // 当前任务目标（独立于 background）
     phase: GamePhase;
     loadingStatus: string; // 初始化时的详细进度
     ui: {
         isAppreciating: boolean; // 是否处于纯享赏析模式 (隐藏UI)
         showActionMenu: boolean; // 是否正在显示决策菜单
+        isWaitingForLLM: boolean; // 是否正在等待LLM返回
         screenShake: boolean;    // 是否触发受击震动
         notifications: Array<{ id: string, message: string }>; // 物品获取等飘字消息
         availableActions: Array<{ id: number, title: string, detail: string }>; // 当前可用行动选项
+        showCharacterDetail: string | null; // 当前展示详情的人物名称
     };
     worldBackdrop: string; // 潜意识缓存的底稿
     // Actions
@@ -79,7 +81,8 @@ export interface GameState {
     injectInitialWorldState: (data: InitialWorldData) => void;
     setAvailableActions: (actions: Array<{ id: number, title: string, detail: string }>) => void;
     setPlayerStats: (stats: Partial<GameState['player']>) => void;
-    setScenarioInfo: (info: Partial<GameState['scenario']>) => void;
+    setBackgroundInfo: (info: Partial<GameState['background']>) => void;
+    setGoal: (goal: string) => void;
     addHistoryObject: (speaker: string, text: string) => void;
     setVisuals: (visuals: Partial<GameState['visuals']>) => void;
     toggleAppreciateMode: () => void;
@@ -87,6 +90,8 @@ export interface GameState {
     triggerScreenShake: () => void;
     addNotification: (message: string) => void;
     removeNotification: (id: string) => void;
+    setShowCharacterDetail: (name: string | null) => void;
+    setIsWaitingForLLM: (isWaiting: boolean) => void;
     resetGame: () => void;
 }
 
@@ -103,10 +108,9 @@ export const useGameStore = create<GameState>((set) => {
                 inventory: [],
                 perks: [],
             },
-            scenario: {
+            background: {
                 id: bg.id,
                 name: bg.name,
-                goal: "",
                 deadline: "",
             },
             visuals: {
@@ -115,15 +119,18 @@ export const useGameStore = create<GameState>((set) => {
                 characterName: null,
             },
             history: [],
+            goal: "",
             worldBackdrop: "",
             phase: 'initializing' as GamePhase,
             loadingStatus: "",
             ui: {
                 isAppreciating: false,
                 showActionMenu: false,
+                isWaitingForLLM: false,
                 screenShake: false,
                 notifications: [],
                 availableActions: [],
+                showCharacterDetail: null,
             },
         };
     };
@@ -190,8 +197,8 @@ export const useGameStore = create<GameState>((set) => {
                     perks: data.player.perks,
                     currentScene: data.player.currentScene
                 },
-                scenario: {
-                    ...state.scenario,
+                background: {
+                    ...state.background,
                     worldMap: {
                         scenes: scenesDict,
                         connections: data.worldMap?.connections || {},
@@ -202,10 +209,10 @@ export const useGameStore = create<GameState>((set) => {
                 visuals: {
                     ...state.visuals,
                     backgroundImage: startBackground
-                        ? `/resources/${state.scenario.id}/images/${startBackground}`
+                        ? `/resources/${state.background.id}/images/${startBackground}`
                         : "",
                     characterImage: activeChar?.icon
-                        ? `/resources/${state.scenario.id}/characters/${activeChar.icon}`
+                        ? `/resources/${state.background.id}/characters/${activeChar.icon}`
                         : null,
                     characterName: activeChar ? activeChar.name : null
                 },
@@ -218,7 +225,8 @@ export const useGameStore = create<GameState>((set) => {
         setAvailableActions: (actions) => set((state) => ({ ui: { ...state.ui, availableActions: actions } })),
 
         setPlayerStats: (stats) => set((state) => ({ player: { ...state.player, ...stats } })),
-        setScenarioInfo: (info) => set((state) => ({ scenario: { ...state.scenario, ...info } })),
+        setBackgroundInfo: (info) => set((state) => ({ background: { ...state.background, ...info } })),
+        setGoal: (goal) => set({ goal }),
         addHistoryObject: (speaker, text) => set((state) => ({ history: [...state.history, { speaker, text }] })),
         setVisuals: (visuals) => set((state) => ({ visuals: { ...state.visuals, ...visuals } })),
         toggleAppreciateMode: () => set((state) => ({ ui: { ...state.ui, isAppreciating: !state.ui.isAppreciating } })),
@@ -236,8 +244,14 @@ export const useGameStore = create<GameState>((set) => {
                 set((state) => ({ ui: { ...state.ui, notifications: state.ui.notifications.filter(n => n.id !== id) } }));
             }, 3000);
         },
-        removeNotification: (id) => set((state) => ({
+        removeNotification: (id: string) => set((state) => ({
             ui: { ...state.ui, notifications: state.ui.notifications.filter(m => m.id !== id) }
+        })),
+        setShowCharacterDetail: (name: string | null) => set((state) => ({
+            ui: { ...state.ui, showCharacterDetail: name }
+        })),
+        setIsWaitingForLLM: (isWaiting: boolean) => set((state) => ({
+            ui: { ...state.ui, isWaitingForLLM: isWaiting }
         })),
     };
 });

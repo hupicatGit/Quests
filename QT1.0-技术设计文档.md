@@ -172,9 +172,9 @@ function parseLLMResponse(text) {
 ```javascript
 // resources/config.js
 const gameResources = {
-  currentScenario: "titanic_1912",
+  currentBackground: "titanic_1912",
 
-  scenarios: {
+  backgrounds: {
     taitanic_1912: {
       name: "泰坦尼克号1912",
       backgrounds: {
@@ -222,18 +222,18 @@ resources/
 ```javascript
 const ImageLoader = {
   getBackground(sceneKey) {
-    const bg = gameResources.scenarios[currentScenario].backgrounds[sceneKey];
-    return `/resources/${currentScenario}/images/${bg}`;
+    const bg = gameResources.backgrounds[currentBackground].backgrounds[sceneKey];
+    return `/resources/${currentBackground}/images/${bg}`;
   },
 
   getCharacter(characterName) {
-    const char = gameResources.scenarios[currentScenario].characters[characterName];
+    const char = gameResources.backgrounds[currentBackground].characters[characterName];
     // 立绘全局托底机制，防止遇到未配置角色时报错
-    return char ? `/resources/${currentScenario}/characters/${char}` : `/resources/common/unknown_shadow.png`;
+    return char ? `/resources/${currentBackground}/characters/${char}` : `/resources/common/unknown_shadow.png`;
   },
 
   getItemIcon(itemName) {
-    const item = gameResources.scenarios[currentScenario].items[itemName];
+    const item = gameResources.backgrounds[currentBackground].items[itemName];
     if (item) return item;
     // 物品图标智能托底机制，适配大模型的涌现创造力
     if (itemName.match(/(刀|剑|枪|武器)/)) return "🗡️";
@@ -307,8 +307,8 @@ const gameState = {
     skills: [],
   },
 
-  // 剧本状态
-  scenario: {
+  // 背景状态
+  background: {
     id: "titanic_1912",
     name: "泰坦尼克号1912",
     currentScene: "码头",

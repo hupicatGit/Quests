@@ -4,11 +4,20 @@ interface FadeInTextProps {
     text: string;
     speed?: number;
     onComplete?: () => void;
+    onIteration?: (currentLength: number) => void;
+    quote?: boolean;
 }
 
-export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComplete }) => {
-    const [displayedText, setDisplayedText] = useState('');
-    const [currentIndex, setCurrentIndex] = useState(0);
+interface TextSegment {
+    content: string;
+    isBold: boolean;
+}
+
+export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComplete, onIteration, quote = false }) => {
+    const [currentLength, setCurrentLength] = useState(0);
+    const [segments, setSegments] = useState<TextSegment[]>([]);
+    const [totalLength, setTotalLength] = useState(0);
+
     // 用 ref 持有最新的 onComplete，避免函数每次渲染重建导致 useEffect 无限触发
     const onCompleteRef = useRef(onComplete);
     onCompleteRef.current = onComplete;
@@ -16,32 +25,70 @@ export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComp
     const calledRef = useRef(false);
 
     useEffect(() => {
-        // 文本改变时完整重置
-        setDisplayedText('');
-        setCurrentIndex(0);
+        // 解析 Markdown ** 语法
+        const parts = text.split(/(\*\*.*?\*\*)/g);
+        const parsedSegments = parts.map(part => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+                return { content: part.slice(2, -2), isBold: true };
+            }
+            return { content: part, isBold: false };
+        }).filter(s => s.content.length > 0);
+
+        setSegments(parsedSegments);
+        setTotalLength(parsedSegments.reduce((acc, s) => acc + s.content.length, 0));
+        setCurrentLength(0);
         calledRef.current = false;
     }, [text]);
 
+    // 用 ref 持有最新的 onIteration，避免函数每次渲染重建导致 useEffect 无限触发
+    const onIterationRef = useRef(onIteration);
+    onIterationRef.current = onIteration;
+
     useEffect(() => {
-        if (currentIndex < text.length) {
+        if (currentLength < totalLength) {
             const timeout = setTimeout(() => {
-                setDisplayedText(prev => prev + text[currentIndex]);
-                setCurrentIndex(prev => prev + 1);
+                const nextLength = currentLength + 1;
+                setCurrentLength(nextLength);
+                onIterationRef.current?.(nextLength);
             }, speed);
             return () => clearTimeout(timeout);
-        } else if (!calledRef.current) {
+        } else if (totalLength > 0 && !calledRef.current) {
             // 打字完毕，触发一次回调
             calledRef.current = true;
             onCompleteRef.current?.();
         }
-        // 只依赖 currentIndex, text, speed，不依赖 onComplete，避免无限循环
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentIndex, text, speed]);
+    }, [currentLength, totalLength, speed]);
+
+    // 根据当前进度渲染片段
+    const renderContent = () => {
+        let remainingChars = currentLength;
+        return segments.map((segment, idx) => {
+            if (remainingChars <= 0) return null;
+
+            const showCount = Math.min(segment.content.length, remainingChars);
+            const displayedPart = segment.content.substring(0, showCount);
+            remainingChars -= showCount;
+
+            if (segment.isBold) {
+                return (
+                    <span
+                        key={idx}
+                        className="font-bold text-amber-200/90 drop-shadow-[0_0_4px_rgba(253,230,138,0.2)] px-1 mx-0.5 bg-amber-200/5 rounded-sm border-b border-amber-200/10 antialiased not-italic inline-block"
+                    >
+                        {displayedPart}
+                    </span>
+                );
+            }
+            return <span key={idx}>{displayedPart}</span>;
+        });
+    };
 
     return (
         <span className="leading-[1.8] antialiased">
-            {displayedText}
-            {currentIndex < text.length && (
+            {quote && <span className="opacity-30 mr-1">"</span>}
+            {renderContent()}
+            {quote && currentLength === totalLength && <span className="opacity-30 ml-1">"</span>}
+            {currentLength < totalLength && (
                 <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-500 animate-pulse align-middle" />
             )}
         </span>

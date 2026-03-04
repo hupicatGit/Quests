@@ -18,9 +18,9 @@ export default defineConfig({
           if (req.url?.startsWith('/api/list-resources') && req.method === 'GET') {
             try {
               const url = new URL(req.url, 'http://localhost');
-              const scenarioId = url.searchParams.get('scenarioId');
-              if (!scenarioId) { res.writeHead(400); res.end('Missing scenarioId'); return; }
-              const base = path.resolve(process.cwd(), 'public', 'resources', scenarioId);
+              const backgroundId = url.searchParams.get('backgroundId');
+              if (!backgroundId) { res.writeHead(400); res.end('Missing backgroundId'); return; }
+              const base = path.resolve(process.cwd(), 'public', 'resources', backgroundId);
               const readDir = (sub: string): string[] => {
                 const dir = path.join(base, sub);
                 if (!fs.existsSync(dir)) return [];
@@ -134,6 +134,82 @@ export default defineConfig({
                 res.end(JSON.stringify({ success: true, scenarioId, filePath }));
               } catch (e) { res.writeHead(500); res.end(String(e)); }
             });
+          } else if (req.url === '/api/auto-save-scenario' && req.method === 'POST') {
+            // ---- 自动保存随机生成剧本 API ----
+            let body = '';
+            req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+            req.on('end', () => {
+              try {
+                const data = JSON.parse(body);
+                const { backgroundId, prologue, worldState, goal, deadline, playerOverrides } = data;
+                if (!backgroundId) { res.writeHead(400); res.end('Missing backgroundId'); return; }
+
+                // 生成剧本 ID：backgroundId_YYYYMMDD_HHmmss
+                const now = new Date();
+                const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                const scenarioId = `${backgroundId}_${ts}`;
+
+                const scenario = {
+                  id: scenarioId,
+                  backgroundId,
+                  createdAt: now.toISOString(),
+                  prologue: prologue || "",
+                  goal: goal || "",
+                  deadline: deadline || "",
+                  playerOverrides: playerOverrides || {},
+                  worldState: worldState || {},
+                };
+
+                // 保存到独立的 saved_scenarios 目录
+                const dir = path.resolve(process.cwd(), 'saved_scenarios', backgroundId);
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+                const filePath = path.join(dir, `${scenarioId}.json`);
+                fs.writeFileSync(filePath, JSON.stringify(scenario, null, 2), 'utf-8');
+
+                console.log(`[Auto-Save Scenario] ${filePath}`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, scenarioId, filePath }));
+              } catch (e) { res.writeHead(500); res.end(String(e)); }
+            });
+          } else if (req.url?.startsWith('/api/get-latest-scenario') && req.method === 'GET') {
+            // ---- 获取最新自动保存的剧本 API ----
+            try {
+              const url = new URL(req.url, 'http://localhost');
+              const backgroundId = url.searchParams.get('backgroundId');
+              if (!backgroundId) { res.writeHead(400); res.end('Missing backgroundId'); return; }
+
+              const dir = path.resolve(process.cwd(), 'saved_scenarios', backgroundId);
+              if (!fs.existsSync(dir)) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'No saved scenarios found.' }));
+                return;
+              }
+
+              const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+              if (files.length === 0) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'No saved scenarios found.' }));
+                return;
+              }
+
+              // 按修改时间倒序排列
+              files.sort((a, b) => {
+                const statA = fs.statSync(path.join(dir, a));
+                const statB = fs.statSync(path.join(dir, b));
+                return statB.mtimeMs - statA.mtimeMs;
+              });
+
+              const latestFile = files[0];
+              const filePath = path.join(dir, latestFile);
+              const content = fs.readFileSync(filePath, 'utf-8');
+
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(content);
+            } catch (e) {
+              console.error('[Get Latest Scenario Error]', e);
+              res.writeHead(500); res.end(String(e));
+            }
           } else {
             next();
           }
