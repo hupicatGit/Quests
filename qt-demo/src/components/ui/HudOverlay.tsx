@@ -46,6 +46,30 @@ export const HudOverlay: React.FC = () => {
                     </span>
                 </div>
 
+                {/* 状态效果指示器 */}
+                {player.statuses && player.statuses.length > 0 && (
+                    <div className="flex gap-2 ml-2">
+                        {player.statuses.map(status => (
+                            <div
+                                key={status.id}
+                                className={`px-3 py-2 backdrop-blur-xl border-l-[2px] shadow-lg flex items-center gap-2 ${status.type === 'negative'
+                                        ? 'bg-red-950/50 border-red-500'
+                                        : 'bg-emerald-950/50 border-emerald-500'
+                                    }`}
+                                title={status.description}
+                            >
+                                <span className={`text-[10px] font-bold tracking-wide ${status.type === 'negative' ? 'text-red-400' : 'text-emerald-400'
+                                    }`}>
+                                    {status.type === 'negative' ? '⚠' : '✨'} {status.name}
+                                </span>
+                                {status.type === 'negative' && status.damage > 0 && (
+                                    <span className="text-red-500/70 text-[9px] font-mono">-{status.damage}/t</span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 {/* 资源面板 */}
                 <div className="flex gap-4 ml-4">
                     {/* 循环渲染背包 */}

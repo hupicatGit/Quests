@@ -6,6 +6,24 @@ import { backgroundRegistry } from '../backgrounds';
 // 游戏阶段枚举
 export type GamePhase = 'initializing' | 'playing' | 'epilogue_pending' | 'success' | 'fail' | 'idle';
 
+// 状态效果类型
+export interface StatusEffect {
+    id: string;          // 唯一标识
+    name: string;        // 状态名称，如"头疼"
+    damage: number;      // 每回合扣血量 (正面状态为0)
+    description: string; // UI 显示的发作描述，如"你因头疼感到阵阵眩晕"
+    type: 'negative' | 'positive'; // 正面/负面
+    evaluated: boolean;  // 是否已被助手LLM评估修正
+}
+
+// 状态弹窗数据
+export interface StatusDialogData {
+    visible: boolean;
+    messages: string[];   // 本回合状态发作的提示列表
+    totalDamage: number;  // 本回合总扣血
+    onConfirm: (() => void) | null; // 玩家确认后的回调
+}
+
 export interface InitialWorldData {
     player: {
         hp: number;
@@ -41,6 +59,7 @@ export interface GameState {
         currentScene: string; // 玩家当前所在场景
         inventory: Array<{ name: string; icon: string }>;
         perks: string[]; // 玩家技能/天赋
+        statuses: StatusEffect[]; // 当前持有的状态效果
     };
     background: {
         id: string; // 背景ID，用于加载本地资源映射
@@ -74,6 +93,7 @@ export interface GameState {
         notifications: Array<{ id: string, message: string }>; // 物品获取等飘字消息
         availableActions: Array<{ id: number, title: string, detail: string }>; // 当前可用行动选项
         showCharacterDetail: string | null; // 当前展示详情的人物名称
+        statusDialog: StatusDialogData; // 状态发作弹窗数据
     };
     worldBackdrop: string; // 潜意识缓存的底稿
     // Actions
@@ -92,10 +112,17 @@ export interface GameState {
     removeNotification: (id: string) => void;
     setShowCharacterDetail: (name: string | null) => void;
     setIsWaitingForLLM: (isWaiting: boolean) => void;
+    // 状态效果相关 Actions
+    addStatus: (status: StatusEffect) => void;
+    removeStatus: (name: string) => void;
+    updateStatus: (name: string, updates: Partial<StatusEffect>) => void;
+    applyStatusEffects: () => { totalDamage: number; messages: string[]; isDeath: boolean };
+    showStatusDialog: (data: Omit<StatusDialogData, 'visible'>) => void;
+    hideStatusDialog: () => void;
     resetGame: () => void;
 }
 
-export const useGameStore = create<GameState>((set) => {
+export const useGameStore = create<GameState>((set, get) => {
     // 初始状态定义提取出来供重置使用
     const getInitialState = () => {
         const bg = backgroundRegistry[GAME_CONFIG.backgroundId] || { id: "unknown", name: "未知世界" };
@@ -107,6 +134,7 @@ export const useGameStore = create<GameState>((set) => {
                 currentScene: "",
                 inventory: [],
                 perks: [],
+                statuses: [],
             },
             background: {
                 id: bg.id,
@@ -131,6 +159,7 @@ export const useGameStore = create<GameState>((set) => {
                 notifications: [],
                 availableActions: [],
                 showCharacterDetail: null,
+                statusDialog: { visible: false, messages: [], totalDamage: 0, onConfirm: null },
             },
         };
     };
@@ -252,6 +281,91 @@ export const useGameStore = create<GameState>((set) => {
         })),
         setIsWaitingForLLM: (isWaiting: boolean) => set((state) => ({
             ui: { ...state.ui, isWaitingForLLM: isWaiting }
+        })),
+
+        // ========== 状态效果相关 ==========
+        addStatus: (status: StatusEffect) => set((state) => {
+            // 同名状态则更新，否则追加
+            const existing = state.player.statuses.find(s => s.name === status.name);
+            if (existing) {
+                return {
+                    player: {
+                        ...state.player,
+                        statuses: state.player.statuses.map(s =>
+                            s.name === status.name ? { ...s, ...status } : s
+                        ),
+                    },
+                };
+            }
+            return {
+                player: {
+                    ...state.player,
+                    statuses: [...state.player.statuses, status],
+                },
+            };
+        }),
+
+        removeStatus: (name: string) => set((state) => ({
+            player: {
+                ...state.player,
+                statuses: state.player.statuses.filter(s => s.name !== name),
+            },
+        })),
+
+        updateStatus: (name: string, updates: Partial<StatusEffect>) => set((state) => ({
+            player: {
+                ...state.player,
+                statuses: state.player.statuses.map(s =>
+                    s.name === name ? { ...s, ...updates } : s
+                ),
+            },
+        })),
+
+        /**
+         * 结算所有负面状态的伤害。
+         * 注意：此方法会直接修改 store 中的 HP（后台扣血），但不会更新 UI 的显占位HP。
+         * 返回本次结算的总伤害、各状态发作消息、是否致死。
+         */
+        applyStatusEffects: (): { totalDamage: number; messages: string[]; isDeath: boolean } => {
+            const state = get();
+            const negativeStatuses = state.player.statuses.filter((s: StatusEffect) => s.type === 'negative' && s.damage > 0);
+
+            if (negativeStatuses.length === 0) {
+                return { totalDamage: 0, messages: [], isDeath: false };
+            }
+
+            let totalDamage: number = 0;
+            const messages: string[] = [];
+
+            negativeStatuses.forEach((s: StatusEffect) => {
+                totalDamage += s.damage;
+                messages.push(s.description || `你因为${s.name}而感到痛苦`);
+            });
+
+            let newHp: number = state.player.hp - totalDamage;
+            if (newHp < 0) newHp = 0;
+            const isDeath: boolean = newHp <= 0;
+
+            // 后台立即更新真实HP
+            set((prev) => ({
+                player: { ...prev.player, hp: newHp },
+            }));
+
+            return { totalDamage, messages, isDeath };
+        },
+
+        showStatusDialog: (data) => set((state) => ({
+            ui: {
+                ...state.ui,
+                statusDialog: { ...data, visible: true },
+            },
+        })),
+
+        hideStatusDialog: () => set((state) => ({
+            ui: {
+                ...state.ui,
+                statusDialog: { visible: false, messages: [], totalDamage: 0, onConfirm: null },
+            },
         })),
     };
 });

@@ -4,8 +4,8 @@ import { GAME_CONFIG } from './gameConfig';
 import { GameLayout } from './components/game/GameLayout';
 import { NarrativePanel } from './components/ui/NarrativePanel';
 import { HudOverlay } from './components/ui/HudOverlay';
+import { StatusEffectDialog } from './components/ui/StatusEffectDialog';
 import { LLMService } from './services/llmService';
-import { GameController } from './utils/gameController';
 import { ActionParser } from './utils/actionParser';
 
 // 模块级锁定，防止 StrictMode 双重挂载导致初始化两次
@@ -57,6 +57,10 @@ const App: React.FC = () => {
             if (scenario.prologue) {
               const parsed = ActionParser.parseResponse(scenario.prologue);
 
+              if (parsed.goal) {
+                setGoal(parsed.goal);
+              }
+
               if (parsed.narrativeText.length > 0) {
                 const paragraphs = parsed.narrativeText.split(/\n\n+/).filter(p => p.trim());
                 paragraphs.forEach(p => {
@@ -70,13 +74,14 @@ const App: React.FC = () => {
             }
           };
 
-          const fallbackToLlm = () => {
-            console.log(">>> [回退或强制 LLM] 开始随机生成流程");
-            LLMService.sendPlayerAction("[开始冒险]").then((response) => {
-              GameController.processLLMResponse(response);
-            }).catch((err) => {
+          const fallbackToLlm = async () => {
+            console.log(">>> [回退或强制 LLM] 开始随机生成流程...");
+            try {
+              const scenario = await LLMService.generateScenario();
+              applyScenarioData(scenario, "LLM 动态生成");
+            } catch (err) {
               console.error("初始化 LLM 请求失败：", err);
-            });
+            }
           };
 
           if (GAME_CONFIG.scenarioId === "0") {
@@ -133,6 +138,9 @@ const App: React.FC = () => {
         <HudOverlay />
         <NarrativePanel />
       </GameLayout>
+
+      {/* 状态效果发作弹窗（覆盖全屏，需放最高层） */}
+      <StatusEffectDialog />
 
       {/* 初始化等待层：完全覆盖并阻断交互 */}
       {phase === 'initializing' && (

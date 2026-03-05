@@ -6,6 +6,7 @@ interface FadeInTextProps {
     onComplete?: () => void;
     onIteration?: (currentLength: number) => void;
     quote?: boolean;
+    forceComplete?: boolean;
 }
 
 interface TextSegment {
@@ -13,7 +14,7 @@ interface TextSegment {
     isBold: boolean;
 }
 
-export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComplete, onIteration, quote = false }) => {
+export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComplete, onIteration, quote = false, forceComplete = false }) => {
     const [currentLength, setCurrentLength] = useState(0);
     const [segments, setSegments] = useState<TextSegment[]>([]);
     const [totalLength, setTotalLength] = useState(0);
@@ -58,6 +59,18 @@ export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComp
             onCompleteRef.current?.();
         }
     }, [currentLength, totalLength, speed]);
+
+    // 监听强制完成
+    useEffect(() => {
+        if (forceComplete && currentLength < totalLength) {
+            setCurrentLength(totalLength);
+            onIterationRef.current?.(totalLength);
+            if (!calledRef.current) {
+                calledRef.current = true;
+                onCompleteRef.current?.();
+            }
+        }
+    }, [forceComplete, totalLength]);
 
     // 根据当前进度渲染片段
     const renderContent = () => {

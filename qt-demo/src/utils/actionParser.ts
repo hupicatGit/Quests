@@ -130,7 +130,7 @@ export const ActionParser = {
         // 5. 从叙事文本中移除选项行，以及行动提示标记
         narrativeText = narrativeText.replace(/^(\d+)\.\s*.*$/gm, "");
         // 同时也移除可能在选项之前的 "【行动提示】" 或类似标记
-        narrativeText = narrativeText.replace(/[\n\s]*[\*]*[【\[(]行动提示[】\])][\*]*/g, "");
+        narrativeText = narrativeText.replace(/[\n\s]*[\*]*(?:[【\[\(]?行动提示[】\]\)]?|你可以(?:选择)?[:：]?|你的行动是[:：]?)[\*]*/g, "");
 
         // 清理可能产生的多余空行
         result.narrativeText = narrativeText.replace(/\n\s*\n/g, '\n\n').trim();

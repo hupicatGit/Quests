@@ -91,7 +91,7 @@ export const ActionMenu: React.FC = () => {
                             <div className="relative">
                                 <input
                                     type="text"
-                                    className="w-full bg-black/50 backdrop-blur-xl border-b-2 border-white/20 px-5 py-4 text-white text-lg placeholder:text-white/20 placeholder:font-light focus:outline-none focus:border-indigo-500 focus:bg-black/70 transition-all shadow-inner"
+                                    className="w-full bg-indigo-500/5 backdrop-blur-xl border border-white/10 rounded-lg px-6 py-5 text-white text-lg md:text-xl placeholder:text-white/20 focus:outline-none focus:border-indigo-500 focus:bg-indigo-500/10 focus:ring-1 focus:ring-indigo-500/30 transition-all shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]"
                                     placeholder="...输入自定义行动..."
                                     value={customInput}
                                     onChange={(e) => setCustomInput(e.target.value)}
@@ -101,7 +101,7 @@ export const ActionMenu: React.FC = () => {
                                         }
                                     }}
                                 />
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 text-xs font-bold font-mono tracking-widest group-focus-within:text-indigo-400">
+                                <div className="absolute right-6 top-1/2 -translate-y-1/2 text-white/30 text-[10px] font-bold font-mono tracking-widest group-focus-within:text-indigo-400 pointer-events-none transition-colors">
                                     ENTER ↵
                                 </div>
                             </div>

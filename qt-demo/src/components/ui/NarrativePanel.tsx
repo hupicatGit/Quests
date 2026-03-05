@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+﻿import React, { useRef, useEffect, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { FadeInText } from './FadeInText';
 import { RichText } from './RichText';
@@ -7,15 +7,22 @@ import { LLMService } from '../../services/llmService';
 import { GAME_CONFIG } from '../../gameConfig';
 
 export const NarrativePanel: React.FC = () => {
-    const { history, ui, phase, addHistoryObject, setShowActionMenu } = useGameStore();
-    const { isAppreciating, showActionMenu } = ui;
+    const { history, ui, phase, addHistoryObject, setShowActionMenu, setIsWaitingForLLM } = useGameStore();
+    const { isAppreciating, showActionMenu, isWaitingForLLM } = ui;
     const [customInput, setCustomInput] = useState('');
     const [revealedCount, setRevealedCount] = useState(0); // 当前在此轮对话中已“点开”的消息数
     const [isMessageFinished, setIsMessageFinished] = useState(false); // 当前打字效果是否完成
+    const [forceComplete, setForceComplete] = useState(false); // 是否强制完成当前文本
     const scrollRef = useRef<HTMLDivElement>(null);
+    const timeoutsRef = useRef<{ nextMsg?: ReturnType<typeof setTimeout>; showMenu?: ReturnType<typeof setTimeout> }>({});
 
     // 当 history 长度增加时，如果之前没有消息，开始从第一条（或新回合的第一条）显现
     useEffect(() => {
+        console.log(`[NP:historyEffect] history.length=${history.length}, revealedCount=${revealedCount}, isMessageFinished=${isMessageFinished}`);
+        // 清理所有定时器
+        if (timeoutsRef.current.nextMsg) clearTimeout(timeoutsRef.current.nextMsg);
+        if (timeoutsRef.current.showMenu) clearTimeout(timeoutsRef.current.showMenu);
+
         // 如果是从空到有的新回合，或是重置，确保 revealedCount 符合逻辑
         if (history.length > 0 && revealedCount >= history.length) {
             setRevealedCount(history.length - 1);
@@ -25,6 +32,9 @@ export const NarrativePanel: React.FC = () => {
         const isCurrentPlayer = history[revealedCount]?.speaker === '玩家';
         if (isCurrentPlayer && revealedCount < history.length - 1) {
             setRevealedCount(prev => prev + 1);
+        } else if (isMessageFinished && revealedCount < history.length - 1) {
+            // 如果上段已打完，且突然又来了新段落（流式传输的下一段来了），则继续推进
+            setRevealedCount(prev => prev + 1);
         }
 
         setIsMessageFinished(false);
@@ -33,17 +43,25 @@ export const NarrativePanel: React.FC = () => {
     const handleNext = () => {
         if (showActionMenu) return;
 
-        // 如果打字还没结束，暂时不支持手动跳过，或者可以留给未来
+        // 如果打字还没结束，触发强制完成当前打字
         if (!isMessageFinished && history[revealedCount]?.speaker !== '玩家') {
+            setForceComplete(true);
             return;
         }
+
+        // 清理由于文本完成而可能触发的定时器，防止导致两次跳跃
+        if (timeoutsRef.current.nextMsg) clearTimeout(timeoutsRef.current.nextMsg);
+        if (timeoutsRef.current.showMenu) clearTimeout(timeoutsRef.current.showMenu);
 
         if (revealedCount < history.length - 1) {
             setRevealedCount(prev => prev + 1);
             setIsMessageFinished(false);
+            setForceComplete(false);
         } else {
             // 所有消息都显示完了，且打字机也停止了，显示菜单
-            if (history.length > 0 && history[history.length - 1].speaker !== '玩家') {
+            // 但必须确认 LLM 不再生成中，否则是流式传输的中间态
+            if (history.length > 0 && history[history.length - 1].speaker !== '玩家'
+                && !useGameStore.getState().ui.isWaitingForLLM) {
                 setShowActionMenu(true);
             }
         }
@@ -59,12 +77,7 @@ export const NarrativePanel: React.FC = () => {
 
     const currentActions = phase === 'epilogue_pending'
         ? [{ id: 1, title: '[面临终焉]', detail: '生成命运的审判 (尾声结算)' }]
-        : (ui.availableActions.length > 0 ? ui.availableActions : [
-            { id: 1, title: '撬开走廊尽头的铁门', detail: '使用小刀，可能惊动船员' },
-            { id: 2, title: '跟随人群冲向楼梯间', detail: '可能发生踩踏' },
-            { id: 3, title: '寻找其他三等舱乘客询问情况', detail: '安全但消耗时间' },
-            { id: 4, title: '检查周围散落的物品', detail: '有机会获得道具' },
-        ]);
+        : ui.availableActions;
 
     // 初始化时重置输入
     useEffect(() => {
@@ -82,42 +95,102 @@ export const NarrativePanel: React.FC = () => {
         setShowActionMenu(false);
         setCustomInput('');
         setIsMessageFinished(false);
+        setForceComplete(false);
+        setIsWaitingForLLM(true);
+        // 清空旧选项，防止流式过程中残留上一回合的选项
+        useGameStore.getState().setAvailableActions([]);
 
-        if (GAME_CONFIG.llm.streaming) {
-            // ---- 流式路径：段落到齐即展示 ----
-            const fullText = await LLMService.sendPlayerActionStreaming(title, (paragraph) => {
-                // 每收到一个段落，直接推入 history 并立即展示
-                useGameStore.getState().addHistoryObject('叙述者', paragraph);
-            });
-            // 流结束：用完整文本做系统标签解析和状态更新
-            GameController.processStreamingFinalState(fullText);
-        } else {
-            // ---- 非流式路径：保持不变 ----
-            const responseData = await LLMService.sendPlayerAction(title);
-            GameController.processLLMResponse(responseData);
+        // ===== 行动前状态结算（后台立即扣血） =====
+        const statusResult = useGameStore.getState().applyStatusEffects();
+        let actionToSend = title;
+
+        // 如果状态导致玩家死亡，修改发给 LLM 的文本
+        if (statusResult.isDeath) {
+            const statusNames = useGameStore.getState().player.statuses
+                .filter(s => s.type === 'negative')
+                .map(s => s.name)
+                .join('、');
+            actionToSend = `[系统强制覆盖]: 玩家因为 ${statusNames} 导致生命归零。玩家临终前试图执行的行动是「${title}」。请结合该行动与致命的状态叙事，描写一个悲惨的死亡结局与尾声。在回复最末尾输出: <System><Event type="death" /></System>`;
         }
+
+        // ===== 后台立即发起 LLM 请求（不等待弹窗确认） =====
+        const llmPromise = (async () => {
+            if (GAME_CONFIG.llm.streaming) {
+                const fullText = await LLMService.sendPlayerActionStreaming(actionToSend, (paragraph) => {
+                    useGameStore.getState().addHistoryObject('叙述者', paragraph);
+                });
+                GameController.processStreamingFinalState(fullText);
+            } else {
+                const responseData = await LLMService.sendPlayerAction(actionToSend);
+                GameController.processLLMResponse(responseData);
+            }
+            useGameStore.getState().setIsWaitingForLLM(false);
+        })();
+
+        // ===== 前台状态弹窗（与 LLM 请求并行） =====
+        if (statusResult.totalDamage > 0 && statusResult.messages.length > 0) {
+            // 弹窗阻塞等待玩家确认，此时后台 LLM 请求已在跑
+            await new Promise<void>((resolve) => {
+                useGameStore.getState().showStatusDialog({
+                    messages: statusResult.messages,
+                    totalDamage: statusResult.totalDamage,
+                    onConfirm: () => {
+                        // 玩家确认后触发血条动画（通过 triggerScreenShake 提供视觉反馈）
+                        useGameStore.getState().triggerScreenShake();
+                        resolve();
+                    },
+                });
+            });
+        }
+
+        // 等待 LLM 请求完成（如果弹窗已经关闭、LLM 还没返回，UI 会显示等待状态）
+        await llmPromise;
     };
 
     // 消息结束的回调
     const handleOneMessageFinished = () => {
+        console.log(`[NP:msgFinished] revealedCount=${revealedCount}, history.length=${history.length}, lastSpeaker=${history[history.length - 1]?.speaker}, isWaitingForLLM=${useGameStore.getState().ui.isWaitingForLLM}`);
         setIsMessageFinished(true);
+        setForceComplete(false); // 重置加速状态
 
         // 核心自动化逻辑：如果当前还有后续消息（且非玩家发出的），或是最后一段叙述，自动推进
         if (revealedCount < history.length - 1) {
             // 短暂延迟后自动显示下一段
-            setTimeout(() => {
+            console.log(`[NP:msgFinished] -> scheduling next reveal in 800ms`);
+            if (timeoutsRef.current.nextMsg) clearTimeout(timeoutsRef.current.nextMsg);
+            timeoutsRef.current.nextMsg = setTimeout(() => {
                 setRevealedCount(prev => prev + 1);
                 setIsMessageFinished(false);
+                setForceComplete(false);
             }, 800);
         } else {
             // 最后一段结束，且不处于正在显示菜单状态，则自动弹出
+            console.log(`[NP:msgFinished] -> last msg, checking showActionMenu conditions`);
             if (history.length > 0 && history[history.length - 1].speaker !== '玩家') {
-                setTimeout(() => {
-                    setShowActionMenu(true);
+                if (timeoutsRef.current.showMenu) clearTimeout(timeoutsRef.current.showMenu);
+                timeoutsRef.current.showMenu = setTimeout(() => {
+                    const waiting = useGameStore.getState().ui.isWaitingForLLM;
+                    console.log(`[NP:msgFinished:timeout] isWaitingForLLM=${waiting}, setting showActionMenu=${!waiting}`);
+                    if (!waiting) {
+                        setShowActionMenu(true);
+                    }
                 }, 500);
             }
         }
     };
+
+    // 如果 LLM 已经生成完毕 (!isWaitingForLLM)，并且最后一段也打印完了，且现在是 AI 说话，就显现选项
+    useEffect(() => {
+        console.log(`[NP:showMenuEffect] isWaitingForLLM=${isWaitingForLLM}, isMessageFinished=${isMessageFinished}, showActionMenu=${showActionMenu}, revealedCount=${revealedCount}, history.length=${history.length}`);
+        if (!isWaitingForLLM && isMessageFinished && !showActionMenu) {
+            if (history.length > 0 && history[history.length - 1].speaker !== '玩家') {
+                if (revealedCount >= history.length - 1) {
+                    console.log(`[NP:showMenuEffect] >>> TRIGGERING setShowActionMenu(true)`);
+                    setShowActionMenu(true);
+                }
+            }
+        }
+    }, [isWaitingForLLM, isMessageFinished, showActionMenu, revealedCount, history.length]);
 
     // 实时滚动到底部（打字过程中）
     const handleIteration = () => {
@@ -176,7 +249,7 @@ export const NarrativePanel: React.FC = () => {
 
                                     <div className="relative">
                                         <div className="absolute -left-4 top-0 bottom-0 w-[1px] bg-gradient-to-b from-transparent via-amber-500/50 to-transparent" />
-                                        <p className="text-xl md:text-2xl leading-relaxed tracking-wide font-medium text-amber-50 text-pretty italic">
+                                        <p className="text-xl md:text-2xl leading-relaxed tracking-wide font-medium text-amber-50 text-pretty">
                                             <RichText text={msg.text} quote />
                                         </p>
                                     </div>
@@ -202,6 +275,7 @@ export const NarrativePanel: React.FC = () => {
                                                 onComplete={handleOneMessageFinished}
                                                 onIteration={handleIteration}
                                                 quote
+                                                forceComplete={forceComplete}
                                             />
                                         ) : (
                                             <RichText text={msg.text} quote />
@@ -265,7 +339,7 @@ export const NarrativePanel: React.FC = () => {
                                 <div className="relative">
                                     <input
                                         type="text"
-                                        className="w-full bg-black/40 backdrop-blur-xl border-b border-white/20 px-4 py-2.5 text-white placeholder:text-white/15 text-sm focus:outline-none focus:border-indigo-400 italic font-light transition-colors"
+                                        className="w-full bg-indigo-500/5 backdrop-blur-xl border border-white/10 rounded-lg px-5 py-4 text-white placeholder:text-white/15 text-lg md:text-xl focus:outline-none focus:border-indigo-400 focus:bg-indigo-500/10 focus:ring-1 focus:ring-indigo-500/30 transition-all shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]"
                                         placeholder="...输入你的自定义行动..."
                                         value={customInput}
                                         onChange={(e) => setCustomInput(e.target.value)}
@@ -273,7 +347,7 @@ export const NarrativePanel: React.FC = () => {
                                             if (e.key === 'Enter' && customInput.trim()) handleAction(customInput);
                                         }}
                                     />
-                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 text-[8px] group-focus-within:text-indigo-400 font-mono transition-colors">
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 text-[10px] group-focus-within:text-indigo-400 font-mono font-bold tracking-widest transition-colors pointer-events-none">
                                         ENTER ↵
                                     </div>
                                 </div>
@@ -282,10 +356,10 @@ export const NarrativePanel: React.FC = () => {
                     </div>
                 )}
 
-                {/* 等待提示：仅在真正没有后续动作、且没有显示菜单时才显示 (例如刚发完请求尚未得到回复) */}
-                {!showActionMenu && history.length > 0 && isMessageFinished && revealedCount >= history.length - 1 && (
+                {/* 等待提示：仅在真正没有后续动作、且没有显示菜单时才显示 (例如流式接收中) */}
+                {!showActionMenu && isWaitingForLLM && isMessageFinished && revealedCount >= history.length - 1 && (
                     <div className="text-white/20 text-[10px] tracking-[0.4em] animate-pulse py-4">
-                        ● WAITING FOR ACTION
+                        ● RECEIVING NARRATIVE TRANSMISSION
                     </div>
                 )}
             </div>

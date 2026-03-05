@@ -1,5 +1,6 @@
 import { ActionParser } from "./actionParser";
 import { useGameStore } from "../store/gameStore";
+import { StatusEvaluator } from "../services/statusEvaluator";
 
 /**
  * 负责打通 LLM、ActionParser 和 Zustand GameStore 的控制器
@@ -136,6 +137,9 @@ export const GameController = {
         } catch (e) {
             // ignore JSON error
         }
+
+        // 6. 后台异步提取并评估叙事中的状态效果（不阻塞主流程）
+        StatusEvaluator.processNarrativeForStatuses(narrativeText);
     },
 
     /**
@@ -242,5 +246,9 @@ export const GameController = {
                 })
             });
         } catch (e) { }
+
+        // 后台异步提取并评估叙事中的状态效果（不阻塞主流程）
+        const parsed_narrativeText = parsed.narrativeText || '';
+        StatusEvaluator.processNarrativeForStatuses(parsed_narrativeText);
     }
 };
