@@ -3,13 +3,14 @@
  */
 export const GAME_CONFIG = {
     // 背景 ID（必填）：决定世界设定、资源目录
-    backgroundId: "titanic_1912",
+    // titanic_1912
+    backgroundId: "unknown", // 如果为空，系统将回退到 "unknown" 背景，不会加载特定的本地美术资源
 
     // 剧本 ID
     // "0" = 自动加载最新临时保存在 saved_scenarios 的剧本（快速重开上局，若无则走 LLM）
     // ""  = 强制要求 LLM 随机生成新剧本
     // "指定ID" = 强制加载 public 预设剧本
-    scenarioId: "0",
+    scenarioId: "unknown_20260307_233847",
 
     // 叙事大模型（负责生成剧情文本）
     llm: {

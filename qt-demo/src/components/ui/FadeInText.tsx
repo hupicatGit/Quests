@@ -79,8 +79,30 @@ export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComp
             if (remainingChars <= 0) return null;
 
             const showCount = Math.min(segment.content.length, remainingChars);
-            const displayedPart = segment.content.substring(0, showCount);
             remainingChars -= showCount;
+
+            // 这里对每个字符拆分来单独渲染并给予 fade-in 动画
+            // 为了避免由于 React 快速重渲染打断 animate-in 动画，这里使用 inline style 动画
+            const result = [];
+            for (let i = 0; i < showCount; i++) {
+                const char = segment.content[i];
+                // 计算当前字符距离最新渲染末尾的偏移
+                const distanceFromEnd = showCount - 1 - i;
+
+                // 如果是最后这几十个字符，并且它是当前所在的 segment 刚渲染出（remainingChars === 0），让它平滑淡入
+                const isNew = remainingChars === 0 && distanceFromEnd < 12;
+
+                result.push(
+                    <span
+                        key={`${idx}-${i}`}
+                        // opacity-0 用来隐藏正在 fadein 之外的时刻跳变的白光，让最终样式固定在 100
+                        className={isNew ? "animate-[animateFadeIn_0.3s_ease-in-out_forwards]" : ""}
+                        style={isNew ? { opacity: 0 } : { opacity: 1 }}
+                    >
+                        {char}
+                    </span>
+                );
+            }
 
             if (segment.isBold) {
                 return (
@@ -88,11 +110,11 @@ export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComp
                         key={idx}
                         className="font-bold text-amber-200/90 drop-shadow-[0_0_4px_rgba(253,230,138,0.2)] px-1 mx-0.5 bg-amber-200/5 rounded-sm border-b border-amber-200/10 antialiased not-italic inline-block"
                     >
-                        {displayedPart}
+                        {result}
                     </span>
                 );
             }
-            return <span key={idx}>{displayedPart}</span>;
+            return <span key={idx}>{result}</span>;
         });
     };
 
@@ -101,9 +123,6 @@ export const FadeInText: React.FC<FadeInTextProps> = ({ text, speed = 25, onComp
             {quote && <span className="opacity-30 mr-1">"</span>}
             {renderContent()}
             {quote && currentLength === totalLength && <span className="opacity-30 ml-1">"</span>}
-            {currentLength < totalLength && (
-                <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-500 animate-pulse align-middle" />
-            )}
         </span>
     );
 };

@@ -153,16 +153,10 @@ export const NarrativePanel: React.FC = () => {
         setIsMessageFinished(true);
         setForceComplete(false); // 重置加速状态
 
-        // 核心自动化逻辑：如果当前还有后续消息（且非玩家发出的），或是最后一段叙述，自动推进
+        // 核心自动化逻辑：如果当前还有后续消息（且非玩家发出的），不再自动推进，等待玩家点击
         if (revealedCount < history.length - 1) {
-            // 短暂延迟后自动显示下一段
-            console.log(`[NP:msgFinished] -> scheduling next reveal in 800ms`);
-            if (timeoutsRef.current.nextMsg) clearTimeout(timeoutsRef.current.nextMsg);
-            timeoutsRef.current.nextMsg = setTimeout(() => {
-                setRevealedCount(prev => prev + 1);
-                setIsMessageFinished(false);
-                setForceComplete(false);
-            }, 800);
+            console.log(`[NP:msgFinished] -> waiting for user click to reveal next`);
+            // 此处原本有自动推进的定时器，现在已移除
         } else {
             // 最后一段结束，且不处于正在显示菜单状态，则自动弹出
             console.log(`[NP:msgFinished] -> last msg, checking showActionMenu conditions`);
@@ -287,14 +281,12 @@ export const NarrativePanel: React.FC = () => {
                     );
                 })}
 
-                {/* 点击继续提示 (仅在非自动化或调试时作为补充，目前流程已全自动，暂时隐藏减少视觉噪音) */}
-                {/* 
+                {/* 点击继续提示 */}
                 {!showActionMenu && isMessageFinished && revealedCount < history.length - 1 && (
                     <div className="text-white/20 text-[10px] tracking-[0.4em] animate-pulse py-4 text-center">
                         ● CLICK TO PROCEED
                     </div>
                 )}
-                */}
 
                 {/* 选项区：融入文字流末尾 */}
                 {showActionMenu && phase !== 'fail' && (

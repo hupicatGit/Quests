@@ -51,6 +51,11 @@
   }
 }
 
+@keyframes animateFadeIn {
+  from { opacity: 0; filter: blur(2px) brightness(1.5); }
+  to { opacity: 1; filter: blur(0px) brightness(1); }
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;

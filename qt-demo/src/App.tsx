@@ -101,18 +101,30 @@ const App: React.FC = () => {
               fallbackToLlm();
             }
           } else if (GAME_CONFIG.scenarioId) {
-            // ======= 预设剧本加载（跳过 LLM）=======
-            const url = `/scenarios/${GAME_CONFIG.backgroundId}/${GAME_CONFIG.scenarioId}.json`;
-            fetch(url)
-              .then(res => {
-                if (!res.ok) throw new Error(`无法加载剧本: ${res.status}`);
-                return res.json();
-              })
-              .then(scenario => applyScenarioData(scenario, "预设静态剧本"))
-              .catch(err => {
-                console.error("预设剧本加载失败，回退到 LLM 生成:", err);
+            // ======= 加载指定 ID 剧本 =======
+            (async () => {
+              try {
+                // 1. 优先尝试从 saved_scenarios 加载 (通过 API 绕开静态资源限制)
+                console.log(`>>> [请求指定剧本] 查找已保存记录: ${GAME_CONFIG.scenarioId}`);
+                const res = await fetch(`/api/get-saved-scenario?backgroundId=${GAME_CONFIG.backgroundId}&scenarioId=${GAME_CONFIG.scenarioId}`);
+
+                if (res.ok) {
+                  const scenario = await res.json();
+                  applyScenarioData(scenario, "已保存的临时剧本");
+                } else {
+                  // 2. 如果 saved_scenarios 没找到，再尝试从 public/scenarios 加载 (预设静态剧本)
+                  console.log(">>> [未在已保存记录中找到] 尝试加载预设静态剧本...");
+                  const url = `/scenarios/${GAME_CONFIG.backgroundId}/${GAME_CONFIG.scenarioId}.json`;
+                  const staticRes = await fetch(url);
+                  if (!staticRes.ok) throw new Error(`无法加载剧本: ${staticRes.status}`);
+                  const scenario = await staticRes.json();
+                  applyScenarioData(scenario, "预设静态剧本");
+                }
+              } catch (err) {
+                console.error("指定剧本加载失败，回退到 LLM 生成:", err);
                 fallbackToLlm();
-              });
+              }
+            })();
           } else {
             // ======= LLM 随机生成 =======
             fallbackToLlm();
