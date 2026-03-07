@@ -110,12 +110,18 @@ export const ASSISTANT_EXTRACTOR_TEMPLATE = `[系统指令]：你是一个无情
 此外，所有字符串内如果含有双引号、换行或其他特殊字符，请务必进行标准的JSON转义（例如：\\" 或 \\n），绝不允许使用不合法的裸露控制字符或未闭合的括号而导致 JSON 崩溃。`;
 
 /**
- * 尾声结算指令模板 (Epilogue User Prompt)
- * 出现时机: 当玩家生命值归零或时间耗尽时，触发死亡结局。
- * 作用: 命令 AI 生成总结与网络小说风格的悲惨结尾，关闭当前游戏节点。
+ * 尾声结算指令模板 (Epilogue System Prompt)
+ * 作用: 当玩家生命值归零或时间耗尽时，附加到 system prompt 中。
  */
-export const EPILOGUE_USER_TEMPLATE = `[系统强制指令]: 玩家目前的生命值已归零，请进入Ending，结束游戏。
-在回复的最末尾，请必须输出单行隐藏标签 <System><Event type="game_over" /></System> `;
+export const EPILOGUE_SYSTEM_TEMPLATE = `[系统强制指令]: 玩家目前的生命值已归零或任务已结束，请进入最终的 Ending 阶段。
+- 你的回复必须控制在 200 字以内。
+- 请以网络小说风格描写这段悲惨或史诗般的结局。
+- 在回复的最末尾，请必须输出单行隐藏标签 <System><Event type="game_over" /></System>`;
+
+/**
+ * 尾声触发指令 (Epilogue Trigger)
+ */
+export const EPILOGUE_TRIGGER_PROMPT = `[系统指令]：请根据历史信息，为这段冒险画上句号。`;
 
 /**
  * 重要提示 (Important Hint)

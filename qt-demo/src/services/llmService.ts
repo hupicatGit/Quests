@@ -1,5 +1,5 @@
 import { useGameStore } from '../store/gameStore';
-import { SYSTEM_PROMPT_TEMPLATE, HISTORY_TEMPLATE, CURRENT_ACTION_TEMPLATE, EPILOGUE_USER_TEMPLATE, ASSISTANT_EXTRACTOR_TEMPLATE } from '../prompts/systemPrompt';
+import { SYSTEM_PROMPT_TEMPLATE, HISTORY_TEMPLATE, CURRENT_ACTION_TEMPLATE, EPILOGUE_SYSTEM_TEMPLATE, EPILOGUE_TRIGGER_PROMPT, ASSISTANT_EXTRACTOR_TEMPLATE } from '../prompts/systemPrompt';
 import OPENING_PROMPT_RAW from '../prompts/opening.txt?raw';
 import { GAME_CONFIG } from '../gameConfig';
 
@@ -255,12 +255,18 @@ export const LLMService = {
         let systemPrompt = "";
         let userPromptContent = "";
 
-        if (state.phase === 'epilogue_pending') {
-            systemPrompt = SYSTEM_PROMPT_TEMPLATE
+                if (state.phase === 'epilogue_pending') {
+            const rulesPart = SYSTEM_PROMPT_TEMPLATE
                 .replace(/{currentScene}/g, currentScene)
                 .replace(/{hp}/g, hp.toString())
                 .replace(/{inventory}/g, inventoryString);
-            userPromptContent = EPILOGUE_USER_TEMPLATE;
+            
+            // 将尾声额外指令放入 system prompt
+            systemPrompt = `${rulesPart}\n\n${EPILOGUE_SYSTEM_TEMPLATE}`;
+
+            const historyContext = state.history.map(h => `[${h.speaker}]: ${h.text}`).join("\n");
+            const historyPart = HISTORY_TEMPLATE.replace(/{history}/g, historyContext);
+            userPromptContent = `${historyPart}\n\n${EPILOGUE_TRIGGER_PROMPT}`;
         } else {
             systemPrompt = SYSTEM_PROMPT_TEMPLATE
                 .replace(/{currentScene}/g, currentScene)
@@ -348,12 +354,18 @@ export const LLMService = {
         let systemPrompt = "";
         let userPromptContent = "";
 
-        if (state.phase === 'epilogue_pending') {
-            systemPrompt = SYSTEM_PROMPT_TEMPLATE
+                if (state.phase === 'epilogue_pending') {
+            const rulesPart = SYSTEM_PROMPT_TEMPLATE
                 .replace(/{currentScene}/g, currentScene)
                 .replace(/{hp}/g, hp.toString())
                 .replace(/{inventory}/g, inventoryString);
-            userPromptContent = EPILOGUE_USER_TEMPLATE;
+            
+            // 将尾声额外指令放入 system prompt
+            systemPrompt = `${rulesPart}\n\n${EPILOGUE_SYSTEM_TEMPLATE}`;
+
+            const historyContext = state.history.map(h => `[${h.speaker}]: ${h.text}`).join("\n");
+            const historyPart = HISTORY_TEMPLATE.replace(/{history}/g, historyContext);
+            userPromptContent = `${historyPart}\n\n${EPILOGUE_TRIGGER_PROMPT}`;
         } else {
             systemPrompt = SYSTEM_PROMPT_TEMPLATE
                 .replace(/{currentScene}/g, currentScene)
